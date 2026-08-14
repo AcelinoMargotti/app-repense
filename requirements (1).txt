@@ -1,0 +1,2 @@
+streamlit>=1.38
+streamlit-local-storage>=0.0.25
