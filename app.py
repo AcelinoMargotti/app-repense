@@ -9,6 +9,7 @@ from icc_scale import ICC_ITEMS, LIKERT_LABELS, score_icc, awareness_tier
 from scoac_scale import SCOAC_ITEMS, FREQ_LABELS, score_scoac
 from story import STORY, get_reputation_tier
 from resources import HELP_RESOURCES, IMPACT_PHRASES
+import sheets
 
 # ----------------------------------------------------------------------------
 # CONFIG & ESTILO
@@ -428,9 +429,9 @@ def screen_results():
             unsafe_allow_html=True,
         )
 
-    # Salva no histórico local do navegador
+    # Salva no histórico local do navegador (localStorage) + envia para Google Sheets
     if "saved_this_run" not in st.session_state:
-        record = {
+        local_record = {
             "timestamp": datetime.now().isoformat(),
             "nickname": st.session_state.nickname,
             "icc_pre_pct": pre["total_pct"],
@@ -441,9 +442,43 @@ def screen_results():
             "ending_title": ending_title,
             "story_path": st.session_state.story_path,
         }
-        st.session_state.history.append(record)
+        st.session_state.history.append(local_record)
         persist_history()
+
+        sheet_record = {
+            "timestamp_iso": local_record["timestamp"],
+            "user_id": st.session_state.user_id or "",
+            "nickname": st.session_state.nickname,
+            "icc_pre_pct": pre["total_pct"],
+            "icc_post_pct": post["total_pct"],
+            "icc_delta_pct": delta,
+            "icc_pre_conhecimento": pre["dimensions"]["CONH"]["pct"],
+            "icc_pre_atitude": pre["dimensions"]["ATIT"]["pct"],
+            "icc_pre_intencao": pre["dimensions"]["INT"]["pct"],
+            "icc_post_conhecimento": post["dimensions"]["CONH"]["pct"],
+            "icc_post_atitude": post["dimensions"]["ATIT"]["pct"],
+            "icc_post_intencao": post["dimensions"]["INT"]["pct"],
+            "scoac_total": scoac["total"],
+            "scoac_at_risk": scoac["at_risk"],
+            "scoac_ameaca": scoac["factors"].get("Ameaça", 0),
+            "scoac_difamacao_exposicao": scoac["factors"].get("Difamação/Exposição", 0),
+            "scoac_problemas_emocionais": scoac["factors"].get("Problemas Emocionais", 0),
+            "reputation": st.session_state.reputation,
+            "reputation_tier": rep_tier["label"],
+            "ending_title": ending_title,
+            "story_path_json": json.dumps(st.session_state.story_path, ensure_ascii=False),
+        }
+        sent_ok, sent_msg = sheets.append_record(sheet_record)
         st.session_state.saved_this_run = True
+        st.session_state._sheets_status = (sent_ok, sent_msg)
+
+    sent_ok, sent_msg = getattr(st.session_state, "_sheets_status", (False, ""))
+    if sent_ok:
+        st.success(f"☁️ {sent_msg}")
+    elif sheets.is_configured():
+        st.error(f"☁️ {sent_msg}")
+    else:
+        st.caption("☁️ Coleta central (Google Sheets) não configurada neste ambiente — dados salvos só neste navegador.")
 
     st.divider()
     if st.button("🔄 Jogar novamente"):
